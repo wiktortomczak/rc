@@ -21,16 +21,10 @@ FIXED_TEST_CASES = test_cases_json["test_cases"]
 N_TESTS = 1
 
 
-def PrintArray(arr, fmt='%8.2f'):
-    np.savetxt('/dev/stdout', arr, fmt)
-    
-
 def execute_control(filler_id, robot_id, target_xy):
     # EDIT ONLY BELOW THIS LINE
 
     if not hasattr(execute_control, 'robot'):
-
-        print('target_xy', target_xy)
 
         class Robot(object):
 
@@ -51,48 +45,65 @@ def execute_control(filler_id, robot_id, target_xy):
 
             def NextAction(self):
                 next(self._actions)
-                
+
             def _Actions(self):
-                yield from self._RotateTo(yaw=np.pi/2)
+                if target_xy[0] > 0:
+                    target_x = target_xy[0] - .3
+                else:
+                    target_x = target_xy[0] + .3
+                yield from self._MoveFillerToXY(target_x, target_xy[1], tolerance=0.01)
                 print('### 0')
-                # yield from self._GoToY(target_xy[1])
-                # print('### 1')
-                # yield from self._GoToX(target_xy[0])
-                # print('### 2')
-                time.sleep(3600)
 
-            def _GoToX(self, x):
-                while np.abs(self.x() - x) > MAX_DISPLACEMENT_ERROR:
-                    print('yaw = %10.6f' % self.yaw())
-                    # print('position x=%8.2f y=%8.2f' % (self.x(), self.y()))
-                    p.setJointMotorControl2(robot_id, 1, p.POSITION_CONTROL, targetPosition=x, maxVelocity=1, force=1)
-                    # p.setJointMotorControl2(robot_id, 1, p.VELOCITY_CONTROL, targetVelocity=direction, force=1)
-                    yield
+                yield from self._MoveFillerToXY(*target_xy)
+                print('### 1')
 
-            def _GoToY(self, y):
-                while np.abs(self.y() - y) > MAX_DISPLACEMENT_ERROR:
-                    print('yaw = %10.6f' % self.yaw())
-                    # print('position x=%8.2f y=%8.2f' % (self.x(), self.y()))
-                    p.setJointMotorControl2(robot_id, 0, p.POSITION_CONTROL, targetPosition=y, maxVelocity=1)
-                    # p.setJointMotorControl2(robot_id, 0, p.VELOCITY_CONTROL, targetVelocity=direction, force=1)
-                    yield
+            def _MoveFillerToXY(self, filler_x_target, filler_y_target, tolerance=0):
+                while True:
+                    print('filler.x = %8.4f  filler.y = %8.4f  filler.yaw = %8.4f' % (
+                        filler_x(), filler_y(), filler_yaw()))
+                    if (np.abs(filler_x_target - filler_x()) <= tolerance and
+                        np.abs(filler_y_target - filler_y()) <= tolerance):
+                        break
+                    else:
+                        self._RotateFillerTowardsYaw()
+                        self._MoveFillerTowardsX(filler_x_target)
+                        self._MoveFillerTowardsY(filler_y_target)
+                        yield
 
-            def _RotateTo(self, yaw):
-                while np.abs(self.yaw() - yaw) > MAX_ROTATION_ERROR:
-                    print('yaw = %10.6f' % self.yaw())
-                    p.setJointMotorControl2(robot_id, 2, p.POSITION_CONTROL, targetPosition=yaw)
-                    yield
+            def _RotateFillerTowardsYaw(self):
+                filler_yaw_target = np.pi / 2
+                delta = filler_yaw_target - filler_yaw()
+                p.setJointMotorControl2(
+                    robot_id, 2, p.VELOCITY_CONTROL, targetVelocity=delta*2)
+
+            def _MoveFillerTowardsX(self, filler_x_target):
+                delta = filler_x_target - filler_x()
+                p.setJointMotorControl2(
+                    robot_id, 1, p.VELOCITY_CONTROL,
+                    targetVelocity=delta, force=10)
+
+            def _MoveFillerTowardsY(self, filler_y_target):
+                delta = filler_y_target - filler_y()
+                p.setJointMotorControl2(
+                    robot_id, 0, p.VELOCITY_CONTROL,
+                    targetVelocity=delta, force=10)
+
+        def filler_x():
+            position, _ = p.getBasePositionAndOrientation(filler_id)
+            return position[0]
+
+        def filler_y():
+            position, _ = p.getBasePositionAndOrientation(filler_id)
+            return position[1]
+
+        def filler_yaw():
+            _, orientation = p.getBasePositionAndOrientation(filler_id)
+            return p.getEulerFromQuaternion(orientation)[2]
 
         execute_control.robot = Robot()
         
     execute_control.robot.NextAction()
-    
-    
-    # maxVelocity
-    # 0 - move along Y, 1 - move along X
-    # p.setJointMotorControl2(robot_id, 0, p.VELOCITY_CONTROL, targetVelocity=1, force=1)
 
-    pass
     # EDIT ONLY ABOVE THIS LINE
 
 
@@ -231,13 +242,16 @@ def test(test_index):
             
 
 def main():
-    p.connect(p.GUI)
+    import os
+    p.connect(getattr(p, os.getenv('PYBULLET', 'DIRECT')))
 
     n_succes = 0
     total_time_succes = 0
 
     import sys
-    test(int(sys.argv[1]))
+    succeded, _ = test(int(sys.argv[1]))
+    print('succeded =', succeded)
+    sys.exit(0 if succeded else 1)
 
     # for test_index in range(N_TESTS):
     #     succeded, current_time = test(test_index)
@@ -251,3 +265,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# --out_path_format=/tmp/{1}.out
